@@ -29,7 +29,7 @@ Live at **https://baloghdaniel.github.io/betquiz**
   Realtime.
 - **Hosting** — GitHub Pages, built and deployed by
   [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) on every push to
-  `main`.
+  `master`.
 
 ## The security model
 
