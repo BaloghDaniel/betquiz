@@ -6,6 +6,11 @@ duel and you drink a flat penalty.
 
 Live at **https://baloghdaniel.github.io/betquiz**
 
+> Picking this project up in a fresh AI session? Read
+> [`AI-README.md`](AI-README.md) first — it covers the security model's
+> reasoning, two real bugs found during development and why normal testing
+> missed them, and deployment gotchas that aren't obvious from the code alone.
+
 ## How a game goes
 
 1. Someone creates a room and reads the 6-character code out to the table. In
