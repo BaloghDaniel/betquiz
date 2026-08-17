@@ -52,13 +52,15 @@ export default function RoomView({ userId }: { userId: string }) {
     )
   }
 
+  // Keyed by match so every duel starts each screen with fresh local state
+  // (stake pickers, answer locks, expanded reviews).
   switch (currentMatch.status) {
     case 'betting':
-      return <Betting state={state} match={currentMatch} />
+      return <Betting key={currentMatch.id} state={state} match={currentMatch} />
     case 'active':
-      return <Quiz state={state} match={currentMatch} />
+      return <Quiz key={currentMatch.id} state={state} match={currentMatch} />
     case 'finished':
-      return <RoundResult state={state} match={currentMatch} />
+      return <RoundResult key={currentMatch.id} state={state} match={currentMatch} />
     default:
       return (
         <Screen>

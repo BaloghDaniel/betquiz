@@ -6,8 +6,14 @@ import Screen from './Screen'
 
 export default function Betting({ state, match }: { state: RoomState; match: Match }) {
   const { room, players, bets, matches, me } = state
-  const [pick, setPick] = useState<string | null>(null)
-  const [amount, setAmount] = useState(1)
+
+  const matchBets = bets.filter((b) => b.match_id === match.id)
+  const myBet = me ? matchBets.find((b) => b.bettor_id === me.id) : undefined
+
+  // Seeded from any existing bet so a refresh mid-betting restores the choice.
+  // RoomView keys this component by match id, so these reset for every duel.
+  const [selected, setSelected] = useState<string | null>(myBet?.backed_player_id ?? null)
+  const [amount, setAmount] = useState(myBet?.amount ?? 1)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -17,30 +23,14 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
   const p1 = match.player1_id
   const p2 = match.player2_id
   const amDuellist = me.id === p1 || me.id === p2
-  const matchBets = bets.filter((b) => b.match_id === match.id)
-  const myBet = matchBets.find((b) => b.bettor_id === me.id)
-  const selected = pick ?? myBet?.backed_player_id ?? null
-  const stake = myBet && pick === null ? myBet.amount : amount
+  const unchanged =
+    myBet !== undefined && myBet.backed_player_id === selected && myBet.amount === amount
 
-  async function submit() {
-    if (!selected) return
+  async function run(fn: () => Promise<unknown>) {
     setError(null)
     setBusy(true)
     try {
-      await placeBet(match.id, selected, stake)
-      setPick(null)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function start() {
-    setError(null)
-    setBusy(true)
-    try {
-      await lockBetting(match.id)
+      await fn()
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -56,10 +46,7 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
     return (
       <button
         disabled={amDuellist}
-        onClick={() => {
-          setPick(id)
-          setAmount(myBet?.backed_player_id === id ? myBet.amount : stake)
-        }}
+        onClick={() => setSelected(id)}
         className={`flex-1 rounded-3xl border-2 p-4 text-center transition active:scale-[0.98] disabled:active:scale-100 ${
           active ? ring : 'border-ink-line bg-ink-soft/60'
         }`}
@@ -95,9 +82,8 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
 
       {amDuellist ? (
         <p className="text-center text-white/60">
-          You’re in this duel, so you can’t bet on it. {match.p1_score === 0 && 'Get ready — '}
-          {room.questions_per_match} questions, {room.question_seconds} seconds each. Lose and you
-          drink {room.penalty_mouthfuls}.
+          You’re in this duel, so you can’t bet on it. {room.questions_per_match} questions,{' '}
+          {room.question_seconds} seconds each. Lose and you drink {room.penalty_mouthfuls}.
         </p>
       ) : (
         <>
@@ -109,43 +95,43 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
             <div className="mt-3 flex items-center gap-3">
               <button
                 className="h-14 w-14 shrink-0 rounded-2xl border border-ink-line bg-ink text-2xl active:scale-95"
-                onClick={() => setAmount(Math.max(1, stake - 1))}
+                onClick={() => setAmount((a) => Math.max(1, a - 1))}
               >
                 −
               </button>
               <div className="flex-1 text-center">
-                <div className="text-4xl font-black text-amber">{stake}</div>
+                <div className="text-4xl font-black text-amber">{amount}</div>
                 <div className="text-xs text-white/40">
-                  {stake === 1 ? 'mouthful' : 'mouthfuls'}
+                  {amount === 1 ? 'mouthful' : 'mouthfuls'}
                 </div>
               </div>
               <button
                 className="h-14 w-14 shrink-0 rounded-2xl border border-ink-line bg-ink text-2xl active:scale-95"
-                onClick={() => setAmount(Math.min(room.max_bet, stake + 1))}
+                onClick={() => setAmount((a) => Math.min(room.max_bet, a + 1))}
               >
                 +
               </button>
             </div>
             <p className="mt-3 text-center text-xs text-white/40">
-              Back the loser and you drink {stake}. Back the winner and you drink nothing.
+              Back the loser and you drink {amount}. Back the winner and you drink nothing.
             </p>
           </div>
 
-          <button className="btn-primary" disabled={!selected || busy} onClick={() => void submit()}>
+          <button
+            className="btn-primary"
+            disabled={!selected || busy || unchanged}
+            onClick={() => void run(() => placeBet(match.id, selected!, amount))}
+          >
             {busy
               ? 'Saving…'
-              : myBet
-                ? `Change bet to ${stake} on ${name(selected ?? myBet.backed_player_id)}`
-                : selected
-                  ? `Bet ${stake} on ${name(selected)}`
-                  : 'Pick a player'}
+              : !selected
+                ? 'Pick a player'
+                : unchanged
+                  ? `Bet placed: ${amount} on ${name(selected)}`
+                  : myBet
+                    ? `Change to ${amount} on ${name(selected)}`
+                    : `Bet ${amount} on ${name(selected)}`}
           </button>
-
-          {myBet && (
-            <p className="text-center text-sm text-emerald-300">
-              Bet locked: {myBet.amount} on {name(myBet.backed_player_id)}
-            </p>
-          )}
         </>
       )}
 
@@ -155,7 +141,10 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
           <ul className="mt-2 space-y-1 text-sm">
             {matchBets.map((b) => (
               <li key={b.id} className="flex justify-between text-white/70">
-                <span>{name(b.bettor_id)}</span>
+                <span>
+                  {name(b.bettor_id)}
+                  {b.bettor_id === me.id && <span className="ml-1 text-white/30">(you)</span>}
+                </span>
                 <span>
                   {b.amount} on <span className="text-white">{name(b.backed_player_id)}</span>
                 </span>
@@ -166,7 +155,11 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
       )}
 
       {me.is_owner ? (
-        <button className="btn-ghost" disabled={busy} onClick={() => void start()}>
+        <button
+          className="btn-ghost"
+          disabled={busy}
+          onClick={() => void run(() => lockBetting(match.id))}
+        >
           {busy ? 'Starting…' : 'Start the duel'}
         </button>
       ) : (
