@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { RoomState } from '../hooks/useRoom'
-import type { Match } from '../lib/types'
-import { lockBetting, placeBet } from '../lib/api'
+import type { Match, MatchTheme } from '../lib/types'
+import { getMatchTheme, lockBetting, placeBet } from '../lib/api'
 import Screen from './Screen'
 
 export default function Betting({ state, match }: { state: RoomState; match: Match }) {
   const { room, players, bets, matches, me } = state
+  const [theme, setTheme] = useState<MatchTheme | null>(null)
 
   const matchBets = bets.filter((b) => b.match_id === match.id)
   const myBet = me ? matchBets.find((b) => b.bettor_id === me.id) : undefined
@@ -16,6 +17,12 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
   const [amount, setAmount] = useState(myBet?.amount ?? 1)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getMatchTheme(match.id)
+      .then(setTheme)
+      .catch(() => setTheme(null))
+  }, [match.id])
 
   if (!room || !me) return null
 
@@ -73,6 +80,26 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
       <h1 className="text-center text-2xl font-bold">
         {amDuellist ? 'You’re up next' : 'Place your bet'}
       </h1>
+
+      <div
+        className={`rounded-3xl border p-4 text-center ${
+          theme?.revealed ? 'border-amber/40 bg-amber/10' : 'border-violet/40 bg-violet/10'
+        }`}
+      >
+        <div className="text-xs uppercase tracking-widest text-white/40">Theme</div>
+        {theme === null ? (
+          <div className="mt-1 text-xl font-bold text-white/30">…</div>
+        ) : theme.revealed ? (
+          <div className="mt-1 text-2xl font-black text-amber">{theme.category}</div>
+        ) : (
+          <>
+            <div className="mt-1 text-2xl font-black text-violet">? ? ?</div>
+            <div className="mt-1 text-xs text-white/40">
+              Mystery theme — revealed once betting closes
+            </div>
+          </>
+        )}
+      </div>
 
       <div className="flex items-stretch gap-3">
         <Duellist id={p1} tone="amber" />

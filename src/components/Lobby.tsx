@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { RoomState } from '../hooks/useRoom'
-import { leaveRoom, startGame } from '../lib/api'
+import { leaveRoom, setRoomOptions, startGame } from '../lib/api'
 import Screen from './Screen'
 
 export default function Lobby({ state }: { state: RoomState }) {
@@ -76,6 +76,34 @@ export default function Lobby({ state }: { state: RoomState }) {
           ))}
         </ul>
       </div>
+
+      <button
+        disabled={!me.is_owner || busy}
+        onClick={() => void run(() => setRoomOptions(room.id, !room.mystery_themes))}
+        className={`flex w-full items-center gap-4 rounded-3xl border p-5 text-left transition disabled:opacity-70 ${
+          room.mystery_themes ? 'border-violet bg-violet/15' : 'border-ink-line bg-ink-soft/60'
+        }`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">Mystery themes</div>
+          <div className="mt-0.5 text-sm text-white/50">
+            {room.mystery_themes
+              ? 'Bets are placed blind — the theme is revealed when betting closes.'
+              : 'Each duel’s theme is shown before you bet.'}
+          </div>
+        </div>
+        <div
+          className={`h-7 w-12 shrink-0 rounded-full p-1 transition ${
+            room.mystery_themes ? 'bg-violet' : 'bg-ink-line'
+          }`}
+        >
+          <div
+            className={`h-5 w-5 rounded-full bg-white transition ${
+              room.mystery_themes ? 'translate-x-5' : ''
+            }`}
+          />
+        </div>
+      </button>
 
       {players.length >= 2 && (
         <p className="text-center text-sm text-white/50">

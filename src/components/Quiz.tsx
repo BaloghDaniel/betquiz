@@ -101,7 +101,7 @@ export default function Quiz({ state, match }: { state: RoomState; match: Match 
             <span>
               Question {q.position + 1} / {q.total}
             </span>
-            <span>{q.category}</span>
+            <span className="font-semibold text-amber">{q.category}</span>
           </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink-line">
             <div

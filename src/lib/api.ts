@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { JoinResult, LeaderboardRow, LiveQuestion, MatchResults } from './types'
+import type { JoinResult, LeaderboardRow, LiveQuestion, MatchResults, MatchTheme } from './types'
 
 /**
  * Every game action is a SECURITY DEFINER RPC -- the client has no write access
@@ -19,6 +19,15 @@ export const joinRoom = (code: string, nickname: string) =>
 
 export const leaveRoom = (roomId: string) =>
   rpc<void>('leave_room', { p_room_id: roomId })
+
+export const setRoomOptions = (roomId: string, mysteryThemes: boolean) =>
+  rpc<{ mystery_themes: boolean }>('set_room_options', {
+    p_room_id: roomId,
+    p_mystery_themes: mysteryThemes,
+  })
+
+export const getMatchTheme = (matchId: string) =>
+  rpc<MatchTheme>('get_match_theme', { p_match_id: matchId })
 
 export const startGame = (roomId: string) =>
   rpc<{ match_count: number; current_match_id: string }>('start_game', { p_room_id: roomId })

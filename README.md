@@ -8,14 +8,21 @@ Live at **https://baloghdaniel.github.io/betquiz**
 
 ## How a game goes
 
-1. Someone creates a room and reads the 6-character code out to the table.
+1. Someone creates a room and reads the 6-character code out to the table. In
+   the lobby, the host can flip on **Mystery themes**.
 2. Everyone joins on their own phone — no signup, just a nickname.
 3. The host starts. Players are shuffled and paired into 1v1 duels. With an odd
-   headcount, the spare player sits out and bets on every round.
+   headcount, the spare player sits out and bets on every round. Each duel is
+   assigned one of eight themes — Sport, Geography, Music, Celebrities, Film &
+   TV, History, Science & Nature, Random Facts.
 4. Duels play **one at a time**. Before each one, everyone not in it stakes
-   1–5 mouthfuls on a player.
-5. The two duellists answer the same 10 questions on a timer. Most correct wins;
-   a tie is broken by total answer time; a dead heat voids all bets.
+   1–5 mouthfuls on a player. With mystery themes **off** (the default) the
+   theme is shown while betting, so you can back the geography whiz against
+   the guy who's never left his hometown. With it **on**, the theme stays
+   sealed until betting closes — bets are placed blind.
+5. The two duellists answer the same 10 questions, all from that duel's theme,
+   on a timer. Most correct wins; a tie is broken by total answer time; a dead
+   heat voids all bets.
 6. The result screen shows exactly who owes what. The host moves things on when
    the drinking is done.
 7. After the last duel, a leaderboard ranks everyone by how little they drank.
@@ -38,9 +45,10 @@ is hostile:
 
 - Clients have **no write access to any table**. Every action goes through a
   `SECURITY DEFINER` RPC that re-checks `auth.uid()` and the caller's role.
-- `questions`, `match_questions` and `answers` are **not readable by clients at
-  all**. Without this, a player could open devtools and read `correct_index`
-  mid-duel.
+- `questions`, `match_questions`, `answers` and `match_themes` are **not
+  readable by clients at all**. Without this, a player could open devtools and
+  read `correct_index` mid-duel, or read a "mystery" theme straight off the
+  `matches`-adjacent table before betting closes.
 - `get_current_question` returns the prompt and options and never the answer.
   Grading happens server-side inside `submit_answer`; the client only sends an
   index. Correct answers are released by `get_match_results`, and only once the
@@ -83,17 +91,28 @@ in apply order:
 | `0002_rpcs.sql` | all game logic |
 | `0003_rls.sql` | row level security, table grants, function grants |
 | `0004_realtime.sql` | Realtime publication |
-| `0005_seed_questions.sql` | 160 starter questions |
+| `0005_seed_questions.sql` | starter questions |
 | `0006_next_round.sql` | host-paced handover between duels |
+| `0007_leaderboard_scope.sql` | scope leaderboard queries to the room + indexes |
+| `0008_fix_rls_helper_grants.sql` | grant `EXECUTE` on the RLS helper functions |
+| `0009_themes.sql` | eight question themes, `match_themes`, mystery-themes option |
+| `0010`–`0017_seed_*.sql` | question bank, ~100 per theme (807 total) |
+| `0018_fix_theme_question_positions.sql` | fix scrambled `position` values from `0009` |
 
-Adding your own questions is a plain insert — `options` is a 4-element array and
-`correct_index` is 0-based:
+Adding your own questions is a plain insert — `options` is a 4-element array,
+`correct_index` is 0-based, and `category` must be one of the eight themes:
 
 ```sql
 insert into public.questions (prompt, options, correct_index, category, difficulty)
 values ('Who is buying the next round?',
-        array['Dani','Not Dani','Definitely Dani','Dani again'], 0, 'general', 'easy');
+        array['Dani','Not Dani','Definitely Dani','Dani again'], 0, 'Random Facts', 'easy');
 ```
+
+Themes are assigned per duel in `start_game`, one question draw per theme
+category (`0009_themes.sql`). `get_match_theme` decides whether to reveal it:
+always once a duel is `active`, otherwise gated on the room's
+`mystery_themes` flag, which the host sets from the lobby via
+`set_room_options`.
 
 ## Room settings
 

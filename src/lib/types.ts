@@ -11,6 +11,13 @@ export interface Room {
   penalty_mouthfuls: number
   max_bet: number
   question_seconds: number
+  /** When on, a duel's theme stays hidden until betting closes. */
+  mystery_themes: boolean
+}
+
+export interface MatchTheme {
+  revealed: boolean
+  category: string | null
 }
 
 export interface Player {
