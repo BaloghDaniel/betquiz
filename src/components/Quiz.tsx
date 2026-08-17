@@ -67,7 +67,7 @@ export default function Quiz({ state, match }: { state: RoomState; match: Match 
 
   if (!q || q.status === 'finished' || !q.prompt) {
     return (
-      <Screen>
+      <Screen home>
         <p className="text-center text-white/50">Scoring the duel…</p>
       </Screen>
     )
@@ -95,6 +95,7 @@ export default function Quiz({ state, match }: { state: RoomState; match: Match 
 
   return (
     <Screen
+      home
       header={
         <div className="pt-2">
           <div className="flex items-center justify-between text-xs uppercase tracking-widest text-white/40">

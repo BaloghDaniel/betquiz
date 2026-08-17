@@ -4,10 +4,27 @@ import { ensureSignedIn } from './lib/supabase'
 import Home from './routes/Home'
 import RoomView from './routes/RoomView'
 import Screen from './components/Screen'
+import ErrorBoundary from './components/ErrorBoundary'
 
 // HashRouter rather than BrowserRouter: GitHub Pages has no SPA rewrite, so a
 // refresh on /room/abc would 404. The hash never reaches the server.
+//
+// The router wraps *everything*, including the connecting and error states.
+// Screen uses useNavigate() for its "back to start" link, and a component that
+// calls it outside Router context throws during render -- which unmounts the
+// whole tree and leaves nothing but the body background. Keeping the provider
+// at the very top means no screen can ever be rendered without it.
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <HashRouter>
+        <AppRoutes />
+      </HashRouter>
+    </ErrorBoundary>
+  )
+}
+
+function AppRoutes() {
   const [userId, setUserId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -41,11 +58,9 @@ export default function App() {
   }
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/room/:roomId" element={<RoomView userId={userId} />} />
-      </Routes>
-    </HashRouter>
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/room/:roomId" element={<RoomView userId={userId} />} />
+    </Routes>
   )
 }

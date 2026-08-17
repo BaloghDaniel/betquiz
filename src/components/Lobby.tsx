@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { RoomState } from '../hooks/useRoom'
-import { leaveRoom, setRoomOptions, startGame } from '../lib/api'
+import { leaveRoom, removePlayer, setRoomOptions, startGame } from '../lib/api'
 import Screen from './Screen'
 
 export default function Lobby({ state }: { state: RoomState }) {
@@ -10,6 +10,9 @@ export default function Lobby({ state }: { state: RoomState }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // Two-tap confirm: booting someone by mis-tapping on a crowded phone screen
+  // would be a genuinely annoying thing to do to a friend.
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null)
 
   if (!room || !me) return null
 
@@ -40,7 +43,7 @@ export default function Lobby({ state }: { state: RoomState }) {
   }
 
   return (
-    <Screen>
+    <Screen home>
       <div className="text-center">
         <p className="text-xs uppercase tracking-widest text-white/40">Room code</p>
         <button
@@ -63,14 +66,46 @@ export default function Lobby({ state }: { state: RoomState }) {
           {players.map((p) => (
             <li
               key={p.id}
-              className="flex items-center justify-between rounded-xl bg-ink/60 px-4 py-3"
+              className="flex items-center gap-2 rounded-xl bg-ink/60 px-4 py-3"
             >
-              <span className="font-medium">
+              <span className="min-w-0 flex-1 truncate font-medium">
                 {p.nickname}
                 {p.id === me.id && <span className="ml-2 text-xs text-white/40">you</span>}
               </span>
               {p.is_owner && (
                 <span className="rounded-full bg-amber/15 px-2 py-0.5 text-xs text-amber">host</span>
+              )}
+              {me.is_owner && p.id !== me.id && (
+                confirmRemove === p.id ? (
+                  <span className="flex shrink-0 items-center gap-1">
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        void run(
+                          () => removePlayer(room.id, p.id),
+                          () => setConfirmRemove(null),
+                        )
+                      }
+                      className="rounded-lg bg-red-500/80 px-2.5 py-1 text-xs font-semibold text-white active:scale-95"
+                    >
+                      Remove
+                    </button>
+                    <button
+                      onClick={() => setConfirmRemove(null)}
+                      className="rounded-lg px-2 py-1 text-xs text-white/40"
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    aria-label={`Remove ${p.nickname}`}
+                    onClick={() => setConfirmRemove(p.id)}
+                    className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-white/30 active:text-red-300"
+                  >
+                    ×
+                  </button>
+                )
               )}
             </li>
           ))}

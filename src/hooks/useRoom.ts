@@ -45,7 +45,10 @@ export function useRoom(roomId: string | undefined, userId: string | null): Room
     if (r.error) {
       setError(r.error.message)
     } else if (!r.data) {
-      setError('That room no longer exists.')
+      // RLS returns nothing both when the room is gone and when you are simply
+      // no longer in it (the host removed you, or you left). The client cannot
+      // tell those apart, so say something true of both rather than guessing.
+      setError('This room is no longer available to you. It may have ended, or the host removed you.')
     } else {
       setError(null)
       setRoom(r.data as Room)
@@ -86,9 +89,19 @@ export function useRoom(roomId: string | undefined, userId: string | null): Room
     document.addEventListener('visibilitychange', onWake)
     window.addEventListener('focus', onWake)
 
+    // Safety net for state changes Realtime structurally cannot deliver. The
+    // clearest case: when the host removes you, the players DELETE event is
+    // RLS-filtered against your membership -- which no longer exists -- so you
+    // are never told. Without this you would sit in a dead lobby indefinitely.
+    // It also covers any events missed while the websocket was reconnecting.
+    const safetyNet = setInterval(() => {
+      if (document.visibilityState === 'visible') schedule()
+    }, 10_000)
+
     return () => {
       document.removeEventListener('visibilitychange', onWake)
       window.removeEventListener('focus', onWake)
+      clearInterval(safetyNet)
       if (timer.current) clearTimeout(timer.current)
       void supabase.removeChannel(channel)
     }

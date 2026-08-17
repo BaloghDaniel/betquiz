@@ -1,14 +1,33 @@
-import { supabase } from './supabase'
+import { isStaleSessionError, recoverStaleSession, supabase } from './supabase'
 import type { JoinResult, LeaderboardRow, LiveQuestion, MatchResults, MatchTheme } from './types'
 
 /**
  * Every game action is a SECURITY DEFINER RPC -- the client has no write access
  * to any table. Postgres raises plain-English messages, so surface them as-is.
+ *
+ * One case is intercepted rather than surfaced: a foreign-key violation on
+ * auth.users means this tab is holding a JWT for an account that has since been
+ * deleted server-side. The raw error ("violates foreign key constraint
+ * players_user_id_fkey") is meaningless to a player, and the situation is
+ * entirely recoverable -- sign in fresh and try once more. Only retried once,
+ * so a genuine constraint bug still surfaces instead of looping.
  */
 async function rpc<T>(fn: string, args: Record<string, unknown> = {}): Promise<T> {
   const { data, error } = await supabase.rpc(fn, args)
-  if (error) throw new Error(error.message.replace(/^.*?:\s*/, ''))
-  return data as T
+  if (!error) return data as T
+
+  if (isStaleSessionError(error.message)) {
+    await recoverStaleSession()
+    const retry = await supabase.rpc(fn, args)
+    if (!retry.error) return retry.data as T
+    throw new Error(
+      isStaleSessionError(retry.error.message)
+        ? 'Your session expired. Reload the page and try again.'
+        : retry.error.message.replace(/^.*?:\s*/, ''),
+    )
+  }
+
+  throw new Error(error.message.replace(/^.*?:\s*/, ''))
 }
 
 export const createRoom = (nickname: string) =>
@@ -19,6 +38,12 @@ export const joinRoom = (code: string, nickname: string) =>
 
 export const leaveRoom = (roomId: string) =>
   rpc<void>('leave_room', { p_room_id: roomId })
+
+export const removePlayer = (roomId: string, playerId: string) =>
+  rpc<{ removed_player_id: string; nickname: string }>('remove_player', {
+    p_room_id: roomId,
+    p_player_id: playerId,
+  })
 
 export const setRoomOptions = (roomId: string, mysteryThemes: boolean) =>
   rpc<{ mystery_themes: boolean }>('set_room_options', {

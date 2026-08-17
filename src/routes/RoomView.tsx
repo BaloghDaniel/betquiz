@@ -19,7 +19,7 @@ export default function RoomView({ userId }: { userId: string }) {
 
   if (loading) {
     return (
-      <Screen>
+      <Screen home>
         <p className="text-center text-white/50">Loading room…</p>
       </Screen>
     )
@@ -46,7 +46,7 @@ export default function RoomView({ userId }: { userId: string }) {
 
   if (!currentMatch) {
     return (
-      <Screen>
+      <Screen home>
         <p className="text-center text-white/50">Waiting for the next round…</p>
       </Screen>
     )
@@ -63,7 +63,7 @@ export default function RoomView({ userId }: { userId: string }) {
       return <RoundResult key={currentMatch.id} state={state} match={currentMatch} />
     default:
       return (
-        <Screen>
+        <Screen home>
           <p className="text-center text-white/50">Getting the next duel ready…</p>
         </Screen>
       )

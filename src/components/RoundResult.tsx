@@ -20,7 +20,7 @@ export default function RoundResult({ state, match }: { state: RoomState; match:
   if (!room || !me) return null
   if (!res) {
     return (
-      <Screen>
+      <Screen home>
         <p className="text-center text-white/50">{error ?? 'Tallying up…'}</p>
       </Screen>
     )
@@ -45,6 +45,7 @@ export default function RoundResult({ state, match }: { state: RoomState; match:
 
   return (
     <Screen
+      home
       header={
         <div className="pt-2 text-center text-xs uppercase tracking-widest text-white/40">
           Duel {match.match_index + 1} of {matches.length} · result

@@ -68,6 +68,7 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
 
   return (
     <Screen
+      home
       header={
         <div className="flex items-center justify-between pt-2 text-xs uppercase tracking-widest text-white/40">
           <span>

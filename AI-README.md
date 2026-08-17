@@ -140,10 +140,49 @@ scripts/e2e.mjs         The test that matters most. Full game through the
                         mystery-themes reveal timing, leaderboard. Run before
                         trusting any schema change. `npm run test:e2e`.
                         Leaves anonymous test users + a finished room behind
-                        on success — harmless, but periodically clean up with
-                        `delete from auth.users where is_anonymous = true;`
-                        via the Supabase MCP `execute_sql` tool.
+                        on success. See the cleanup warning below before
+                        deleting any of it.
 ```
+
+### NEVER blanket-delete anonymous users
+
+**Do not run `delete from auth.users where is_anonymous = true;`.** Every real
+player is an anonymous user — that is the entire auth model. This deletes the
+accounts of anyone currently playing, on their phone, mid-game.
+
+It fails in a maximally confusing way. Their browser keeps a persisted JWT that
+is still correctly signed and unexpired, so the app looks fine and `auth.uid()`
+returns a normal-looking id — but the row behind it is gone, so the next write
+dies on `players_user_id_fkey` and the player sees a raw Postgres foreign-key
+error when trying to join a room. (This happened. An earlier version of this
+very file recommended that command, which is how.)
+
+To clean up after `npm run test:e2e`, delete the specific ids it prints on the
+last line (`CLEANUP_IDS=...`):
+
+```sql
+delete from auth.users where id in ('...','...');
+```
+
+If you need a broader sweep, at minimum protect anyone who could still be
+playing — old accounts, and only those not in a live room:
+
+```sql
+delete from auth.users u
+where u.is_anonymous = true
+  and u.created_at < now() - interval '6 hours'
+  and not exists (
+    select 1 from public.players p
+    join public.rooms r on r.id = p.room_id
+    where p.user_id = u.id and r.status <> 'finished'
+  );
+```
+
+The client now self-heals from this (`ensureSignedIn` verifies the stored
+session with `getUser()` instead of trusting localStorage, and `rpc()` retries
+once after re-authenticating), but self-healing means the player silently
+becomes a *new* identity and loses their seat in any room they were in. Prevention
+still matters.
 
 ## The state machine
 
@@ -186,6 +225,27 @@ The reveal rule: always shown once a duel is `active`; before that (`pending`
 or `betting`), shown only if the room's `mystery_themes` flag is `false`
 (the default). The host toggles it from the lobby via `set_room_options`,
 which is lobby-only and owner-only.
+
+## Git workflow — do not commit or push without being asked
+
+**Do not run `git commit` or `git push` unless the user explicitly asks for
+it in that turn.** Earlier sessions committed and pushed after every change
+by default; the user corrected this and wants local changes to sit
+uncommitted until they actively ask for a commit. This applies even to
+small, obviously-correct fixes — don't rationalize an exception.
+
+What this means in practice:
+- Make the edits, run the build/tests, verify things work — all of that is
+  still expected without being asked.
+- Leave the working tree dirty. Report what changed and that it's ready to
+  commit, rather than committing it.
+- Database migrations applied via the Supabase MCP tools are a separate
+  question from git — those go live on `apply_migration` regardless (there's
+  no "staged but not applied" state for a migration), so continue applying
+  schema changes as needed to verify them. It's specifically the *repo* —
+  `git commit` / `git push` — that waits for an explicit ask.
+- If the user says something like "looks good" or "ship it" without the
+  words commit/push, that's still ambiguous — ask, don't assume.
 
 ## Environment & credentials
 
@@ -250,7 +310,9 @@ which is lobby-only and owner-only.
 - Prefers direct execution over asking permission for routine steps (e.g.
   running migrations, writing test scripts) but explicitly said to ask
   before setup steps with real-world side effects (GitHub auth, repo
-  visibility).
+  visibility) — **and, as of this correction, before any `git commit` /
+  `git push`.** See "Git workflow" above; that section is the current rule,
+  this bullet is the history of how it was arrived at.
 - Design decisions were resolved by giving 2-4 concrete options with tradeoffs
   rather than open-ended questions — worked well for settling the game rules,
   the category list, and the mystery-themes hybrid design (the user

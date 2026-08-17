@@ -21,7 +21,7 @@ export default function Leaderboard({ state }: { state: RoomState }) {
   if (!room || !me) return null
   if (!rows) {
     return (
-      <Screen>
+      <Screen home>
         <p className="text-center text-white/50">{error ?? 'Adding it all up…'}</p>
       </Screen>
     )
@@ -33,6 +33,7 @@ export default function Leaderboard({ state }: { state: RoomState }) {
 
   return (
     <Screen
+      home
       header={
         <div className="pt-2 text-center text-xs uppercase tracking-widest text-white/40">
           Game over · {room.code}
