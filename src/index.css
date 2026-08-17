@@ -1,0 +1,50 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #14142b;
+  --color-ink-soft: #1e1e3f;
+  --color-ink-line: #2e2e57;
+  --color-amber: #f59e0b;
+  --color-violet: #a855f7;
+  --font-display: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink);
+  color: #f4f4f8;
+  font-family: var(--font-display);
+  /* A phone in a pub gets tapped fast and hard -- kill the double-tap zoom and
+     the grey flash on every button. */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overscroll-behavior-y: none;
+}
+
+@layer components {
+  /* Tailwind v4 will not let @apply reference another custom class, so the
+     shared button shape is spelled out in each variant rather than composed. */
+  .btn-primary {
+    @apply w-full rounded-2xl px-5 py-4 text-lg font-semibold transition
+           active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100
+           bg-amber text-ink;
+  }
+  .btn-ghost {
+    @apply w-full rounded-2xl px-5 py-4 text-lg font-semibold transition
+           active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100
+           border border-ink-line bg-ink-soft text-white;
+  }
+  .field {
+    @apply w-full rounded-2xl border border-ink-line bg-ink-soft px-5 py-4 text-lg
+           text-white placeholder:text-white/30 outline-none
+           focus:border-amber/70;
+  }
+  .card {
+    @apply rounded-3xl border border-ink-line bg-ink-soft/60 p-5;
+  }
+}
