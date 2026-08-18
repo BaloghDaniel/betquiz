@@ -50,9 +50,9 @@ export default function Home() {
     <Screen>
       <div className="text-center">
         <h1 className="text-5xl font-black tracking-tight">
-          Bet<span className="text-amber">Quiz</span>
+          Bet<span className="text-accent-deep">Quiz</span>
         </h1>
-        <p className="mt-3 text-white/60">
+        <p className="mt-3 text-ink/70">
           Two players duel over 10 questions. Everyone else bets mouthfuls on the winner.
         </p>
       </div>
@@ -74,10 +74,10 @@ export default function Home() {
         {busy === 'create' ? 'Creating…' : 'Create a room'}
       </button>
 
-      <div className="flex items-center gap-3 py-1 text-xs uppercase tracking-widest text-white/30">
-        <div className="h-px flex-1 bg-ink-line" />
+      <div className="flex items-center gap-3 py-1 text-xs uppercase tracking-widest text-ink/40">
+        <div className="h-px flex-1 bg-line" />
         or join one
-        <div className="h-px flex-1 bg-ink-line" />
+        <div className="h-px flex-1 bg-line" />
       </div>
 
       <input
@@ -100,7 +100,7 @@ export default function Home() {
 
       {last && (
         <button
-          className="text-sm text-white/40 underline underline-offset-4"
+          className="text-sm text-ink/50 underline underline-offset-4"
           onClick={() => navigate(`/room/${last.id}`)}
         >
           Rejoin {last.code}
@@ -108,7 +108,7 @@ export default function Home() {
       )}
 
       {error && (
-        <p className="rounded-2xl bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">
+        <p className="rounded-2xl bg-coral/10 px-4 py-3 text-center text-sm text-coral-deep">
           {error}
         </p>
       )}

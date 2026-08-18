@@ -20,7 +20,7 @@ export default function RoomView({ userId }: { userId: string }) {
   if (loading) {
     return (
       <Screen home>
-        <p className="text-center text-white/50">Loading room…</p>
+        <p className="text-center text-ink/60">Loading room…</p>
       </Screen>
     )
   }
@@ -29,8 +29,8 @@ export default function RoomView({ userId }: { userId: string }) {
     return (
       <Screen>
         <div className="card text-center">
-          <h1 className="text-xl font-bold text-amber">Can’t open this room</h1>
-          <p className="mt-2 text-sm text-white/70">
+          <h1 className="text-xl font-bold text-accent-deep">Can’t open this room</h1>
+          <p className="mt-2 text-sm text-ink/75">
             {error ?? 'You are not a player in this room.'}
           </p>
         </div>
@@ -47,7 +47,7 @@ export default function RoomView({ userId }: { userId: string }) {
   if (!currentMatch) {
     return (
       <Screen home>
-        <p className="text-center text-white/50">Waiting for the next round…</p>
+        <p className="text-center text-ink/60">Waiting for the next round…</p>
       </Screen>
     )
   }
@@ -64,7 +64,7 @@ export default function RoomView({ userId }: { userId: string }) {
     default:
       return (
         <Screen home>
-          <p className="text-center text-white/50">Getting the next duel ready…</p>
+          <p className="text-center text-ink/60">Getting the next duel ready…</p>
         </Screen>
       )
   }

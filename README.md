@@ -17,20 +17,23 @@ Live at **https://baloghdaniel.github.io/betquiz**
    the lobby, the host can flip on **Mystery themes**.
 2. Everyone joins on their own phone — no signup, just a nickname.
 3. The host starts. Players are shuffled and paired into 1v1 duels. With an odd
-   headcount, the spare player sits out and bets on every round. Each duel is
-   assigned one of eight themes — Sport, Geography, Music, Celebrities, Film &
-   TV, History, Science & Nature, Random Facts.
-4. Duels play **one at a time**. Before each one, everyone not in it stakes
-   1–5 mouthfuls on a player. With mystery themes **off** (the default) the
-   theme is shown while betting, so you can back the geography whiz against
-   the guy who's never left his hometown. With it **on**, the theme stays
-   sealed until betting closes — bets are placed blind.
-5. The two duellists answer the same 10 questions, all from that duel's theme,
+   headcount, the spare player sits out and bets on every round. Each duel draws
+   two candidate themes from eight — Sport, Geography, Music, Celebrities,
+   Film & TV, History, Science & Nature, Random Facts.
+4. Duels play **one at a time**. Each duel puts **two candidate themes** in the
+   running, and everyone not duelling stakes 1–5 mouthfuls on a player knowing
+   it could be either — back the geography whiz and hope geography wins the
+   flip. With mystery themes **on**, even the two candidates stay hidden and
+   you bet completely blind.
+5. When the host closes betting, the server rolls one of the two themes at
+   random. Every phone plays a slot-machine flip between the candidates, then
+   holds for 5 seconds on the winner with every bet on the table listed.
+6. The two duellists answer the same 10 questions, all from the theme that won,
    on a timer. Most correct wins; a tie is broken by total answer time; a dead
    heat voids all bets.
-6. The result screen shows exactly who owes what. The host moves things on when
+7. The result screen shows exactly who owes what. The host moves things on when
    the drinking is done.
-7. After the last duel, a leaderboard ranks everyone by how little they drank.
+8. After the last duel, a leaderboard ranks everyone by how little they drank.
 
 ## Stack
 
@@ -77,13 +80,26 @@ Open the printed URL in several browser profiles (or on a laptop plus a couple o
 phones on the same network via `npm run dev -- --host`) to play a full game.
 
 ```bash
-npm run build      # typecheck + production build
-npm run test:e2e   # full game + anti-cheat assertions against Supabase
+npm run build         # typecheck + production build
+npm run test:e2e      # full game + anti-cheat assertions against Supabase
+npm run test:dev-room # the solo sandbox, end to end
 ```
 
-`test:e2e` runs against the live project and leaves a finished room and a handful
-of anonymous users behind. That is harmless, but if you run it often you may want
-to clear them out periodically.
+### Playing on your own
+
+Joining with the room code **`111111`** drops you into a sandbox with two bots,
+so the whole chain is playable without rounding up four friends. Before each
+round you choose whether to **play** (you versus a bot, the spare bot bets on
+you) or **bet** (the two bots duel while you stake mouthfuls on one). Rejoining
+resets it to a clean lobby.
+
+### Housekeeping
+
+A scheduled job sweeps the database every 5 minutes: rooms go once they have
+been idle for 10 minutes, and anonymous users go once they belong to no room.
+Nothing needs clearing out by hand, including after a test run — while a game is
+actually being played every phone in the room checks in every 30 seconds, which
+is what keeps the room alive.
 
 ## Database
 
@@ -103,6 +119,14 @@ in apply order:
 | `0009_themes.sql` | eight question themes, `match_themes`, mystery-themes option |
 | `0010`–`0017_seed_*.sql` | question bank, ~100 per theme (807 total) |
 | `0018_fix_theme_question_positions.sql` | fix scrambled `position` values from `0009` |
+| `0019_remove_player.sql` | host can remove a player from the lobby |
+| `0020_theme_showdown.sql` | two candidate themes per duel, rolled when betting closes |
+| `0021_dev_room.sql` | the `111111` solo sandbox: bot players, `dev_start_round` |
+| `0022_bot_answer_timing.sql` | bots answer after 2–5s instead of sitting on the timer |
+| `0023_scheduled_cleanup.sql` | `room_activity` heartbeat table, `touch_room`, `bq_cleanup` |
+| `0024_schedule_cleanup_job.sql` | `pg_cron` job running the sweep every 5 minutes |
+| `0025_cleanup_protect_room_owners.sql` | stop the user sweep cascading away live rooms |
+| `0026_revoke_internal_dev_helpers.sql` | make the dev-room helpers actually internal |
 
 Adding your own questions is a plain insert — `options` is a 4-element array,
 `correct_index` is 0-based, and `category` must be one of the eight themes:
@@ -113,15 +137,19 @@ values ('Who is buying the next round?',
         array['Dani','Not Dani','Definitely Dani','Dani again'], 0, 'Random Facts', 'easy');
 ```
 
-Themes are assigned per duel in `start_game`, one question draw per theme
-category (`0009_themes.sql`). `get_match_theme` decides whether to reveal it:
-always once a duel is `active`, otherwise gated on the room's
-`mystery_themes` flag, which the host sets from the lobby via
-`set_room_options`.
+`start_game` gives each duel two candidate themes (`match_themes.category_a` /
+`category_b`) but draws no questions. `lock_betting` rolls the winner into
+`match_themes.category`, draws that theme's questions, and opens a reveal window
+(`matches.reveal_until`). The roll happens after betting closes on purpose:
+there is no predetermined result sitting around to leak. During the reveal
+`get_current_question` withholds the prompt entirely, and `submit_answer`
+rejects anything sent before `asked_at` — otherwise a duellist could answer
+while the animation is still playing and gain free thinking time.
 
 ## Room settings
 
 Defaults live on the `rooms` table and apply to every new room:
-10 questions per duel, 20 seconds per question, a maximum stake of 5 mouthfuls,
-and a 3-mouthful penalty for losing a duel. Change the column defaults to change
-the house rules.
+10 questions per duel, 20 seconds per question, a 5-second theme reveal, a
+maximum stake of 5 mouthfuls, and a 3-mouthful penalty for losing a duel. Change
+the column defaults to change the house rules. The first question's clock starts
+when the reveal ends, so lengthening the reveal never costs answering time.

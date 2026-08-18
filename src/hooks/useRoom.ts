@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { touchRoom } from '../lib/api'
 import { supabase } from '../lib/supabase'
 import type { Bet, Drink, Match, Player, Room } from '../lib/types'
 
@@ -98,10 +99,21 @@ export function useRoom(roomId: string | undefined, userId: string | null): Room
       if (document.visibilityState === 'visible') schedule()
     }, 10_000)
 
+    // Tell the server this room is still being watched, or the scheduled
+    // cleanup will delete it after 10 idle minutes -- mid-game if need be,
+    // since nothing else writes a timestamp while a duel is being played.
+    // Fires immediately so a freshly opened room is never briefly "idle".
+    const beat = () => {
+      if (document.visibilityState === 'visible') void touchRoom(roomId).catch(() => {})
+    }
+    beat()
+    const heartbeat = setInterval(beat, 30_000)
+
     return () => {
       document.removeEventListener('visibilitychange', onWake)
       window.removeEventListener('focus', onWake)
       clearInterval(safetyNet)
+      clearInterval(heartbeat)
       if (timer.current) clearTimeout(timer.current)
       void supabase.removeChannel(channel)
     }

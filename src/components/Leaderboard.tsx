@@ -22,7 +22,7 @@ export default function Leaderboard({ state }: { state: RoomState }) {
   if (!rows) {
     return (
       <Screen home>
-        <p className="text-center text-white/50">{error ?? 'Adding it all up…'}</p>
+        <p className="text-center text-ink/60">{error ?? 'Adding it all up…'}</p>
       </Screen>
     )
   }
@@ -35,15 +35,15 @@ export default function Leaderboard({ state }: { state: RoomState }) {
     <Screen
       home
       header={
-        <div className="pt-2 text-center text-xs uppercase tracking-widest text-white/40">
+        <div className="pt-2 text-center text-xs uppercase tracking-widest text-ink/50">
           Game over · {room.code}
         </div>
       }
     >
       <div className="text-center">
-        <p className="text-sm uppercase tracking-widest text-white/40">Last one standing</p>
-        <h1 className="mt-1 text-4xl font-black text-amber">{soberest.nickname}</h1>
-        <p className="mt-2 text-white/50">
+        <p className="text-sm uppercase tracking-widest text-ink/50">Last one standing</p>
+        <h1 className="mt-1 text-4xl font-black text-accent-deep">{soberest.nickname}</h1>
+        <p className="mt-2 text-ink/60">
           {soberest.mouthfuls} {soberest.mouthfuls === 1 ? 'mouthful' : 'mouthfuls'} all night
         </p>
       </div>
@@ -54,22 +54,22 @@ export default function Leaderboard({ state }: { state: RoomState }) {
             <li
               key={r.id}
               className={`flex items-center gap-3 rounded-xl px-4 py-3 ${
-                r.id === me.id ? 'bg-amber/10' : 'bg-ink/60'
+                r.id === me.id ? 'bg-accent/10' : 'bg-canvas'
               }`}
             >
-              <span className="w-5 text-sm text-white/30">{i + 1}</span>
+              <span className="w-5 text-sm text-ink/40">{i + 1}</span>
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">
                   {r.nickname}
-                  {r.id === me.id && <span className="ml-2 text-xs text-white/40">you</span>}
+                  {r.id === me.id && <span className="ml-2 text-xs text-ink/50">you</span>}
                 </div>
-                <div className="text-xs text-white/40">
+                <div className="text-xs text-ink/50">
                   {r.wins}W {r.losses}L in duels · bets {r.bets_won}–{r.bets_lost}
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-xl font-black tabular-nums">{r.mouthfuls}</div>
-                <div className="text-[10px] uppercase tracking-wider text-white/30">drunk</div>
+                <div className="text-[10px] uppercase tracking-wider text-ink/40">drunk</div>
               </div>
             </li>
           ))}
@@ -77,8 +77,8 @@ export default function Leaderboard({ state }: { state: RoomState }) {
       </div>
 
       {drunkest.mouthfuls > 0 && drunkest.id !== soberest.id && (
-        <p className="text-center text-sm text-white/50">
-          Spare a thought for <span className="text-white">{drunkest.nickname}</span>, who put away{' '}
+        <p className="text-center text-sm text-ink/60">
+          Spare a thought for <span className="text-ink">{drunkest.nickname}</span>, who put away{' '}
           {drunkest.mouthfuls}.
         </p>
       )}

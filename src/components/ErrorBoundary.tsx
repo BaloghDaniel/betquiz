@@ -30,9 +30,9 @@ export default class ErrorBoundary extends Component<
 
     return (
       <div className="flex min-h-full items-center justify-center px-4">
-        <div className="w-full max-w-md rounded-3xl border border-ink-line bg-ink-soft/60 p-5">
-          <h1 className="text-xl font-bold text-amber">Something broke</h1>
-          <p className="mt-2 text-sm text-white/70">{this.state.error.message}</p>
+        <div className="w-full max-w-md rounded-3xl border border-line bg-surface p-5">
+          <h1 className="text-xl font-bold text-accent-deep">Something broke</h1>
+          <p className="mt-2 text-sm text-ink/75">{this.state.error.message}</p>
           <button
             className="btn-primary mt-5"
             onClick={() => {

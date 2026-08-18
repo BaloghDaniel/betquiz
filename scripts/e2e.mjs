@@ -38,6 +38,19 @@ const rpc = async (c, fn, args) => {
   return data
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/** Betting closes into a short theme-reveal window during which the server
+ *  deliberately withholds the question. Poll past it before trying to play. */
+async function waitForReveal(client, matchId) {
+  for (let i = 0; i < 40; i++) {
+    const v = await rpc(client, 'get_current_question', { p_match_id: matchId })
+    if (!v.revealing) return v
+    await sleep(400)
+  }
+  throw new Error('reveal window never closed')
+}
+
 const userIds = []
 
 try {
@@ -110,16 +123,16 @@ try {
   const m1 = matches[0]
 
   console.log('\n6b. Themes')
-  // Regression check: a prior bug numbered a duel's questions in scan order
-  // before the random ORDER BY + LIMIT was applied, so the stored `position`
-  // values came out scattered (11, 17, 37, ...) instead of 0..9, and the
-  // duel could never load its first question. Assert positions are exactly
-  // 0..questions_per_match-1 with no gaps and no repeats.
+  // Betting happens against two candidate themes; the winner is rolled by the
+  // server only once betting closes, so nothing is decided yet at this point.
   const theme1 = await rpc(clients[0], 'get_match_theme', { p_match_id: m1.id })
-  check('theme is revealed by default (mystery themes off)', theme1.revealed === true)
-  check('revealed theme has a category', typeof theme1.category === 'string' && theme1.category.length > 0)
-
-  ok(`assigned theme for duel 1: ${theme1.category}`)
+  check('two candidate themes are offered', Array.isArray(theme1.candidates) && theme1.candidates.length === 2,
+        JSON.stringify(theme1))
+  check('the two candidates differ', theme1.candidates?.[0] !== theme1.candidates?.[1],
+        JSON.stringify(theme1.candidates))
+  check('no winner is decided while betting is open', theme1.revealed === false && theme1.category === null,
+        JSON.stringify(theme1))
+  ok(`duel 1 candidates: ${theme1.candidates?.join(' vs ')}`)
 
   console.log('\n7. Betting')
   const duellists = [m1.player1_id, m1.player2_id]
@@ -164,14 +177,25 @@ try {
   }
   check('only the host can start the duel', notOwner)
 
-  console.log('\n8. Play the duel')
-  await rpc(clients[0], 'lock_betting', { p_match_id: m1.id })
+  console.log('\n8. The theme roll and reveal')
+  const lock = await rpc(clients[0], 'lock_betting', { p_match_id: m1.id })
+  check('closing betting returns a reveal deadline', !!lock.reveal_until, JSON.stringify(lock))
 
   const themeAfterLock = await rpc(clients[0], 'get_match_theme', { p_match_id: m1.id })
-  check(
-    'theme is still shown once the duel is active',
-    themeAfterLock.revealed === true && themeAfterLock.category === theme1.category,
-  )
+  check('a winner is rolled once betting closes', themeAfterLock.revealed === true && !!themeAfterLock.category,
+        JSON.stringify(themeAfterLock))
+  check('the winner is one of the two candidates', theme1.candidates.includes(themeAfterLock.category),
+        `${themeAfterLock.category} not in ${JSON.stringify(theme1.candidates)}`)
+  ok(`rolled: ${themeAfterLock.category}`)
+
+  // During the reveal the question must stay sealed -- a duellist who could
+  // read it while the animation plays gets free thinking time.
+  const revealing = await rpc(clients[0], 'get_current_question', { p_match_id: m1.id })
+  check('the reveal withholds the question', revealing.revealing === true && !revealing.prompt,
+        JSON.stringify(revealing).slice(0, 140))
+
+  console.log('\n8b. Play the duel')
+  await waitForReveal(clients[0], m1.id)
 
   const c1 = clientFor(m1.player1_id)
   const c2 = clientFor(m1.player2_id)
@@ -193,8 +217,8 @@ try {
       check('it does carry the prompt and 4 options', !!view.prompt && view.options?.length === 4)
       check('duellist is flagged as such', view.is_duellist === true)
       check(
-        `question is drawn from the assigned theme (${theme1.category})`,
-        view.category === theme1.category,
+        `question is drawn from the rolled theme (${themeAfterLock.category})`,
+        view.category === themeAfterLock.category,
         `got ${view.category}`,
       )
       const specView = await rpc(clientFor(spectator.id), 'get_current_question', { p_match_id: m1.id })
@@ -239,6 +263,7 @@ try {
 
   console.log('\n10. Finish the game')
   await rpc(clients[0], 'lock_betting', { p_match_id: matches[1].id })
+  await waitForReveal(clients[0], matches[1].id)
   const d1 = clientFor(matches[1].player1_id)
   const d2 = clientFor(matches[1].player2_id)
   for (let i = 0; i < 10; i++) {
@@ -297,10 +322,15 @@ try {
     .order('match_index')
   const mm1 = mystMatches[0]
 
+  // Mystery themes hides even the two candidates, so you bet knowing nothing.
   const sealedOwner = await rpc(mystOwner, 'get_match_theme', { p_match_id: mm1.id })
-  check('mystery theme is hidden from the owner during betting', sealedOwner.revealed === false && sealedOwner.category === null)
+  check('mystery hides the winner from the owner during betting',
+        sealedOwner.revealed === false && sealedOwner.category === null)
+  check('mystery hides the candidates too', sealedOwner.candidates === null && sealedOwner.mystery === true,
+        JSON.stringify(sealedOwner))
   const sealedSpec = await rpc(mystSpec, 'get_match_theme', { p_match_id: mm1.id })
-  check('mystery theme is hidden from a spectator during betting', sealedSpec.revealed === false && sealedSpec.category === null)
+  check('mystery hides everything from a spectator too',
+        sealedSpec.revealed === false && sealedSpec.category === null && sealedSpec.candidates === null)
 
   await rpc(mystOwner, 'lock_betting', { p_match_id: mm1.id })
   const revealedNow = await rpc(mystOwner, 'get_match_theme', { p_match_id: mm1.id })
@@ -308,7 +338,11 @@ try {
     'mystery theme reveals once the duel starts',
     revealedNow.revealed === true && typeof revealedNow.category === 'string',
   )
-  const firstQ = await rpc(mystOwner, 'get_current_question', { p_match_id: mm1.id })
+  check('and the candidates become visible for the animation',
+        Array.isArray(revealedNow.candidates) && revealedNow.candidates.includes(revealedNow.category),
+        JSON.stringify(revealedNow))
+
+  const firstQ = await waitForReveal(mystOwner, mm1.id)
   check('first question position is 0 in a mystery-themes duel too', firstQ.position === 0, `got ${firstQ.position}`)
   check(
     'revealed question category matches the now-revealed theme',

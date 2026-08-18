@@ -11,13 +11,23 @@ export interface Room {
   penalty_mouthfuls: number
   max_bet: number
   question_seconds: number
-  /** When on, a duel's theme stays hidden until betting closes. */
+  /** How long the theme reveal is held on screen before the first question. */
+  reveal_seconds: number
+  /** When on, even the two candidate themes stay hidden until betting closes. */
   mystery_themes: boolean
+  /** The single-player sandbox reached with code 111111. */
+  is_dev: boolean
 }
 
 export interface MatchTheme {
+  /** True once betting has closed and the coin flip has happened. */
   revealed: boolean
+  /** The theme that won the flip. Null while betting is still open. */
   category: string | null
+  /** True when the room hides even the candidates until the duel starts. */
+  mystery: boolean
+  /** The two themes in the running. Null only under mystery themes. */
+  candidates: [string, string] | null
 }
 
 export interface Player {
@@ -27,6 +37,8 @@ export interface Player {
   nickname: string
   is_owner: boolean
   joined_at: string
+  /** Bots have no auth identity and never call an RPC; the server plays them. */
+  is_bot: boolean
 }
 
 export interface Match {
@@ -60,11 +72,18 @@ export interface Drink {
   reason: 'lost_bet' | 'quiz_loss'
 }
 
-/** Payload of get_current_question. Never carries the correct answer. */
+/** Payload of get_current_question. Never carries the correct answer.
+ *
+ *  During the reveal window (`revealing: true`) the prompt and options are
+ *  withheld entirely -- a duellist who could read the question while the theme
+ *  animation plays would get free thinking time before the clock starts. */
 export interface LiveQuestion {
   match_id: string
   match_question_id: string
   status: MatchStatus
+  revealing: boolean
+  reveal_until: string | null
+  candidates: [string, string] | null
   position: number
   total: number
   prompt: string

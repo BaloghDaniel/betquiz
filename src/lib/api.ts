@@ -36,6 +36,10 @@ export const createRoom = (nickname: string) =>
 export const joinRoom = (code: string, nickname: string) =>
   rpc<JoinResult>('join_room', { p_code: code, p_nickname: nickname })
 
+/** Heartbeat: marks the room as still open so the cleanup job leaves it alone. */
+export const touchRoom = (roomId: string) =>
+  rpc<void>('touch_room', { p_room_id: roomId })
+
 export const leaveRoom = (roomId: string) =>
   rpc<void>('leave_room', { p_room_id: roomId })
 
@@ -53,6 +57,13 @@ export const setRoomOptions = (roomId: string, mysteryThemes: boolean) =>
 
 export const getMatchTheme = (matchId: string) =>
   rpc<MatchTheme>('get_match_theme', { p_match_id: matchId })
+
+/** Sandbox only: build the next duel with you either duelling or betting. */
+export const devStartRound = (roomId: string, mode: 'play' | 'bet') =>
+  rpc<{ match_id: string; mode: string; match_index: number }>('dev_start_round', {
+    p_room_id: roomId,
+    p_mode: mode,
+  })
 
 export const startGame = (roomId: string) =>
   rpc<{ match_count: number; current_match_id: string }>('start_game', { p_room_id: roomId })

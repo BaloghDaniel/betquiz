@@ -1,11 +1,51 @@
 @import 'tailwindcss';
 
+/*
+ * Light party palette: saturated colour carried by *fills*, on a clean neutral
+ * ground. The fills supply the party; the near-white base keeps it legible in
+ * a bright room and stops it reading as a toy.
+ *
+ * Neutrals:
+ *
+ *   canvas  #EEF2F7  the page. Faintly cool so white cards lift off it.
+ *   surface #FFFFFF  cards and inputs.
+ *   line    #D6DFEA  borders and slider tracks.
+ *   ink     #10253A  all text. 13.9:1 on canvas, 15.6:1 on surface.
+ *
+ * Muted text is `ink` at reduced alpha rather than a second grey token, so
+ * every tier is guaranteed to sit in the same hue family as the ground.
+ *
+ * Party hues come in two weights, and the split is the whole trick of a light
+ * theme: a colour bright enough to be exciting as a filled block is nowhere
+ * near dark enough to read as text on white. So each hue has a bright fill and
+ * a darkened `-deep` twin for text, measured against `canvas`:
+ *
+ *            fill (bg)          text (-deep)
+ *   accent   #00A6D6  cyan      #00668A  5.7:1   room code, winners, timers
+ *   mint     #12B981  green     #05714B  5.4:1   right answers, winning bets
+ *   coral    #FB4D5C  rose      #C21F32  5.3:1   drinks owed, lost bets, errors
+ *   blue     #1B3F8B  navy      -- 8.8:1 as-is; the anchor, and the only hue
+ *                                 solid enough to take white text (9.9:1)
+ *
+ * On the bright fills the text is `ink`, never white: ink clears 4.5:1 on all
+ * three (accent 5.5, mint 6.2, coral 4.7) where white reaches only 2.5-3.3.
+ * `blue` inverts that rule -- white on it, ink never.
+ *
+ * As before, the palette carries its own success and danger hues, so no
+ * borrowed Tailwind red/green appears anywhere in the app.
+ */
 @theme {
-  --color-ink: #14142b;
-  --color-ink-soft: #1e1e3f;
-  --color-ink-line: #2e2e57;
-  --color-amber: #f59e0b;
-  --color-violet: #a855f7;
+  --color-canvas: #eef2f7;
+  --color-surface: #ffffff;
+  --color-line: #d6dfea;
+  --color-ink: #10253a;
+  --color-accent: #00a6d6;
+  --color-accent-deep: #00668a;
+  --color-blue: #1b3f8b;
+  --color-mint: #12b981;
+  --color-mint-deep: #05714b;
+  --color-coral: #fb4d5c;
+  --color-coral-deep: #c21f32;
   --font-display: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
@@ -16,8 +56,8 @@ body,
 }
 
 body {
-  background: var(--color-ink);
-  color: #f4f4f8;
+  background: var(--color-canvas);
+  color: var(--color-ink);
   font-family: var(--font-display);
   /* A phone in a pub gets tapped fast and hard -- kill the double-tap zoom and
      the grey flash on every button. */
@@ -32,19 +72,23 @@ body {
   .btn-primary {
     @apply w-full rounded-2xl px-5 py-4 text-lg font-semibold transition
            active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100
-           bg-amber text-ink;
+           bg-accent text-ink;
   }
   .btn-ghost {
     @apply w-full rounded-2xl px-5 py-4 text-lg font-semibold transition
            active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100
-           border border-ink-line bg-ink-soft text-white;
+           border border-line bg-surface text-ink;
   }
   .field {
-    @apply w-full rounded-2xl border border-ink-line bg-ink-soft px-5 py-4 text-lg
-           text-white placeholder:text-white/30 outline-none
-           focus:border-amber/70;
+    @apply w-full rounded-2xl border border-line bg-surface px-5 py-4 text-lg
+           text-ink placeholder:text-ink/40 outline-none
+           focus:border-accent;
   }
+  /* On a dark ground a card was a lighter patch; on a light one it is white
+     lifted off the canvas, and the border alone is too faint to carry that at
+     a glance -- hence the shadow. */
   .card {
-    @apply rounded-3xl border border-ink-line bg-ink-soft/60 p-5;
+    @apply rounded-3xl border border-line bg-surface p-5
+           shadow-[0_1px_3px_rgb(16_37_58/0.06)];
   }
 }

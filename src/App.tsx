@@ -38,9 +38,9 @@ function AppRoutes() {
     return (
       <Screen>
         <div className="card">
-          <h1 className="text-xl font-bold text-amber">Could not sign in</h1>
-          <p className="mt-2 text-sm text-white/70">{error}</p>
-          <p className="mt-4 text-sm text-white/50">
+          <h1 className="text-xl font-bold text-accent-deep">Could not sign in</h1>
+          <p className="mt-2 text-sm text-ink/75">{error}</p>
+          <p className="mt-4 text-sm text-ink/60">
             If this says anonymous sign-ins are disabled, enable them in the Supabase
             dashboard under Authentication → Sign In / Providers → Anonymous sign-ins.
           </p>
@@ -52,7 +52,7 @@ function AppRoutes() {
   if (!userId) {
     return (
       <Screen>
-        <p className="text-center text-white/50">Connecting…</p>
+        <p className="text-center text-ink/60">Connecting…</p>
       </Screen>
     )
   }

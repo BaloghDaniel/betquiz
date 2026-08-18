@@ -45,9 +45,11 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
     }
   }
 
-  const Duellist = ({ id, tone }: { id: string; tone: 'amber' | 'violet' }) => {
+  const Duellist = ({ id, tone }: { id: string; tone: 'accent' | 'mint' }) => {
     const active = selected === id
-    const ring = tone === 'amber' ? 'border-amber bg-amber/15' : 'border-violet bg-violet/15'
+    // Cyan and green read as two teams. Blue was tried here and looked
+    // disabled rather than picked -- it is too dark to carry a selected state.
+    const ring = tone === 'accent' ? 'border-accent bg-accent/20' : 'border-mint bg-mint/25'
     const backers = matchBets.filter((b) => b.backed_player_id === id)
     const pot = backers.reduce((s, b) => s + b.amount, 0)
     return (
@@ -55,11 +57,11 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
         disabled={amDuellist}
         onClick={() => setSelected(id)}
         className={`flex-1 rounded-3xl border-2 p-4 text-center transition active:scale-[0.98] disabled:active:scale-100 ${
-          active ? ring : 'border-ink-line bg-ink-soft/60'
+          active ? ring : 'border-line bg-surface'
         }`}
       >
         <div className="truncate text-lg font-bold">{name(id)}</div>
-        <div className="mt-1 text-xs text-white/40">
+        <div className="mt-1 text-xs text-ink/50">
           {backers.length === 0 ? 'no backers' : `${backers.length} backing · ${pot}`}
         </div>
       </button>
@@ -70,7 +72,7 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
     <Screen
       home
       header={
-        <div className="flex items-center justify-between pt-2 text-xs uppercase tracking-widest text-white/40">
+        <div className="flex items-center justify-between pt-2 text-xs uppercase tracking-widest text-ink/50">
           <span>
             Duel {match.match_index + 1} of {matches.length}
           </span>
@@ -82,34 +84,49 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
         {amDuellist ? 'You’re up next' : 'Place your bet'}
       </h1>
 
-      <div
-        className={`rounded-3xl border p-4 text-center ${
-          theme?.revealed ? 'border-amber/40 bg-amber/10' : 'border-violet/40 bg-violet/10'
-        }`}
-      >
-        <div className="text-xs uppercase tracking-widest text-white/40">Theme</div>
+      {/* Two themes are in the running. Which one it'll be is decided by the
+          server the moment betting closes -- so a bet is a bet on a player
+          across both possibilities, not on a known subject. */}
+      <div className="rounded-3xl border border-blue/40 bg-blue/10 p-4 text-center">
+        <div className="text-xs uppercase tracking-widest text-ink/50">
+          {theme?.mystery ? 'Theme' : 'One of these two'}
+        </div>
+
         {theme === null ? (
-          <div className="mt-1 text-xl font-bold text-white/30">…</div>
-        ) : theme.revealed ? (
-          <div className="mt-1 text-2xl font-black text-amber">{theme.category}</div>
+          <div className="mt-1 text-xl font-bold text-ink/40">…</div>
+        ) : theme.mystery || !theme.candidates ? (
+          <>
+            <div className="mt-1 text-2xl font-black text-ink">? ? ?</div>
+            <div className="mt-1 text-xs text-ink/50">
+              Mystery themes — you’re betting blind
+            </div>
+          </>
         ) : (
           <>
-            <div className="mt-1 text-2xl font-black text-violet">? ? ?</div>
-            <div className="mt-1 text-xs text-white/40">
-              Mystery theme — revealed once betting closes
+            <div className="mt-2 flex items-center justify-center gap-3">
+              <span className="flex-1 rounded-2xl bg-canvas px-2 py-3 text-base font-bold text-ink">
+                {theme.candidates[0]}
+              </span>
+              <span className="text-xs font-bold text-ink/40">OR</span>
+              <span className="flex-1 rounded-2xl bg-canvas px-2 py-3 text-base font-bold text-ink">
+                {theme.candidates[1]}
+              </span>
+            </div>
+            <div className="mt-2 text-xs text-ink/50">
+              Decided at random once betting closes
             </div>
           </>
         )}
       </div>
 
       <div className="flex items-stretch gap-3">
-        <Duellist id={p1} tone="amber" />
-        <div className="flex items-center text-sm font-bold text-white/30">vs</div>
-        <Duellist id={p2} tone="violet" />
+        <Duellist id={p1} tone="accent" />
+        <div className="flex items-center text-sm font-bold text-ink/40">vs</div>
+        <Duellist id={p2} tone="mint" />
       </div>
 
       {amDuellist ? (
-        <p className="text-center text-white/60">
+        <p className="text-center text-ink/70">
           You’re in this duel, so you can’t bet on it. {room.questions_per_match} questions,{' '}
           {room.question_seconds} seconds each. Lose and you drink {room.penalty_mouthfuls}.
         </p>
@@ -118,29 +135,29 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
           <div className="card">
             <div className="flex items-baseline justify-between">
               <span className="font-semibold">Your stake</span>
-              <span className="text-sm text-white/40">max {room.max_bet}</span>
+              <span className="text-sm text-ink/50">max {room.max_bet}</span>
             </div>
             <div className="mt-3 flex items-center gap-3">
               <button
-                className="h-14 w-14 shrink-0 rounded-2xl border border-ink-line bg-ink text-2xl active:scale-95"
+                className="h-14 w-14 shrink-0 rounded-2xl border border-line bg-canvas text-2xl active:scale-95"
                 onClick={() => setAmount((a) => Math.max(1, a - 1))}
               >
                 −
               </button>
               <div className="flex-1 text-center">
-                <div className="text-4xl font-black text-amber">{amount}</div>
-                <div className="text-xs text-white/40">
+                <div className="text-4xl font-black text-accent-deep">{amount}</div>
+                <div className="text-xs text-ink/50">
                   {amount === 1 ? 'mouthful' : 'mouthfuls'}
                 </div>
               </div>
               <button
-                className="h-14 w-14 shrink-0 rounded-2xl border border-ink-line bg-ink text-2xl active:scale-95"
+                className="h-14 w-14 shrink-0 rounded-2xl border border-line bg-canvas text-2xl active:scale-95"
                 onClick={() => setAmount((a) => Math.min(room.max_bet, a + 1))}
               >
                 +
               </button>
             </div>
-            <p className="mt-3 text-center text-xs text-white/40">
+            <p className="mt-3 text-center text-xs text-ink/50">
               Back the loser and you drink {amount}. Back the winner and you drink nothing.
             </p>
           </div>
@@ -165,16 +182,16 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
 
       {matchBets.length > 0 && (
         <div className="card">
-          <h2 className="text-sm font-semibold text-white/60">Bets on the table</h2>
+          <h2 className="text-sm font-semibold text-ink/70">Bets on the table</h2>
           <ul className="mt-2 space-y-1 text-sm">
             {matchBets.map((b) => (
-              <li key={b.id} className="flex justify-between text-white/70">
+              <li key={b.id} className="flex justify-between text-ink/75">
                 <span>
                   {name(b.bettor_id)}
-                  {b.bettor_id === me.id && <span className="ml-1 text-white/30">(you)</span>}
+                  {b.bettor_id === me.id && <span className="ml-1 text-ink/40">(you)</span>}
                 </span>
                 <span>
-                  {b.amount} on <span className="text-white">{name(b.backed_player_id)}</span>
+                  {b.amount} on <span className="text-ink">{name(b.backed_player_id)}</span>
                 </span>
               </li>
             ))}
@@ -191,11 +208,11 @@ export default function Betting({ state, match }: { state: RoomState; match: Mat
           {busy ? 'Starting…' : 'Start the duel'}
         </button>
       ) : (
-        <p className="text-center text-sm text-white/40">Waiting for the host to start the duel…</p>
+        <p className="text-center text-sm text-ink/50">Waiting for the host to start the duel…</p>
       )}
 
       {error && (
-        <p className="rounded-2xl bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">
+        <p className="rounded-2xl bg-coral/10 px-4 py-3 text-center text-sm text-coral-deep">
           {error}
         </p>
       )}

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import type { RoomState } from '../hooks/useRoom'
 import { leaveRoom, removePlayer, setRoomOptions, startGame } from '../lib/api'
 import Screen from './Screen'
+import DevRoundPicker from './DevRoundPicker'
 
 export default function Lobby({ state }: { state: RoomState }) {
   const { room, players, me } = state
@@ -45,14 +46,14 @@ export default function Lobby({ state }: { state: RoomState }) {
   return (
     <Screen home>
       <div className="text-center">
-        <p className="text-xs uppercase tracking-widest text-white/40">Room code</p>
+        <p className="text-xs uppercase tracking-widest text-ink/50">Room code</p>
         <button
           onClick={() => void copyCode()}
-          className="mt-1 text-6xl font-black tracking-[0.15em] text-amber active:scale-95"
+          className="mt-1 text-6xl font-black tracking-[0.15em] text-accent-deep active:scale-95"
         >
           {room.code}
         </button>
-        <p className="mt-2 text-sm text-white/40">
+        <p className="mt-2 text-sm text-ink/50">
           {copied ? 'Copied!' : 'Tap to copy · others join with this code'}
         </p>
       </div>
@@ -60,22 +61,25 @@ export default function Lobby({ state }: { state: RoomState }) {
       <div className="card">
         <div className="flex items-baseline justify-between">
           <h2 className="font-semibold">In the room</h2>
-          <span className="text-sm text-white/40">{players.length}</span>
+          <span className="text-sm text-ink/50">{players.length}</span>
         </div>
         <ul className="mt-3 space-y-2">
           {players.map((p) => (
             <li
               key={p.id}
-              className="flex items-center gap-2 rounded-xl bg-ink/60 px-4 py-3"
+              className="flex items-center gap-2 rounded-xl bg-canvas px-4 py-3"
             >
               <span className="min-w-0 flex-1 truncate font-medium">
                 {p.nickname}
-                {p.id === me.id && <span className="ml-2 text-xs text-white/40">you</span>}
+                {p.id === me.id && <span className="ml-2 text-xs text-ink/50">you</span>}
               </span>
-              {p.is_owner && (
-                <span className="rounded-full bg-amber/15 px-2 py-0.5 text-xs text-amber">host</span>
+              {p.is_bot && (
+                <span className="rounded-full bg-mint/15 px-2 py-0.5 text-xs text-mint-deep">bot</span>
               )}
-              {me.is_owner && p.id !== me.id && (
+              {p.is_owner && (
+                <span className="rounded-full bg-accent/15 px-2 py-0.5 text-xs text-accent-deep">host</span>
+              )}
+              {me.is_owner && p.id !== me.id && !p.is_bot && (
                 confirmRemove === p.id ? (
                   <span className="flex shrink-0 items-center gap-1">
                     <button
@@ -86,13 +90,13 @@ export default function Lobby({ state }: { state: RoomState }) {
                           () => setConfirmRemove(null),
                         )
                       }
-                      className="rounded-lg bg-red-500/80 px-2.5 py-1 text-xs font-semibold text-white active:scale-95"
+                      className="rounded-lg bg-coral-deep px-2.5 py-1 text-xs font-semibold text-white active:scale-95"
                     >
                       Remove
                     </button>
                     <button
                       onClick={() => setConfirmRemove(null)}
-                      className="rounded-lg px-2 py-1 text-xs text-white/40"
+                      className="rounded-lg px-2 py-1 text-xs text-ink/50"
                     >
                       Cancel
                     </button>
@@ -101,7 +105,7 @@ export default function Lobby({ state }: { state: RoomState }) {
                   <button
                     aria-label={`Remove ${p.nickname}`}
                     onClick={() => setConfirmRemove(p.id)}
-                    className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-white/30 active:text-red-300"
+                    className="shrink-0 rounded-lg px-2 py-1 text-lg leading-none text-ink/40 active:text-coral-deep"
                   >
                     ×
                   </button>
@@ -116,38 +120,43 @@ export default function Lobby({ state }: { state: RoomState }) {
         disabled={!me.is_owner || busy}
         onClick={() => void run(() => setRoomOptions(room.id, !room.mystery_themes))}
         className={`flex w-full items-center gap-4 rounded-3xl border p-5 text-left transition disabled:opacity-70 ${
-          room.mystery_themes ? 'border-violet bg-violet/15' : 'border-ink-line bg-ink-soft/60'
+          room.mystery_themes ? 'border-blue bg-blue/35' : 'border-line bg-surface'
         }`}
       >
         <div className="min-w-0 flex-1">
           <div className="font-semibold">Mystery themes</div>
-          <div className="mt-0.5 text-sm text-white/50">
+          <div className="mt-0.5 text-sm text-ink/60">
             {room.mystery_themes
               ? 'Bets are placed blind — the theme is revealed when betting closes.'
               : 'Each duel’s theme is shown before you bet.'}
           </div>
         </div>
+        {/* The off track is ink/25, not `line`: a white knob on a border-weight
+            grey is 1.35:1 and simply vanishes. The shadow carries the rest, as
+            it does on a native switch. */}
         <div
           className={`h-7 w-12 shrink-0 rounded-full p-1 transition ${
-            room.mystery_themes ? 'bg-violet' : 'bg-ink-line'
+            room.mystery_themes ? 'bg-blue' : 'bg-ink/25'
           }`}
         >
           <div
-            className={`h-5 w-5 rounded-full bg-white transition ${
+            className={`h-5 w-5 rounded-full bg-white shadow-[0_1px_2px_rgb(16_37_58/0.35)] transition ${
               room.mystery_themes ? 'translate-x-5' : ''
             }`}
           />
         </div>
       </button>
 
-      {players.length >= 2 && (
-        <p className="text-center text-sm text-white/50">
+      {players.length >= 2 && !room.is_dev && (
+        <p className="text-center text-sm text-ink/60">
           {rounds} {rounds === 1 ? 'duel' : 'duels'} ·{' '}
           {oddOneOut ? 'one player sits out and bets on every round' : 'everyone plays once'}
         </p>
       )}
 
-      {me.is_owner ? (
+      {room.is_dev ? (
+        <DevRoundPicker roomId={room.id} />
+      ) : me.is_owner ? (
         <button
           className="btn-primary"
           disabled={players.length < 2 || busy}
@@ -156,11 +165,11 @@ export default function Lobby({ state }: { state: RoomState }) {
           {players.length < 2 ? 'Waiting for players…' : busy ? 'Starting…' : 'Start the game'}
         </button>
       ) : (
-        <p className="text-center text-white/50">Waiting for the host to start…</p>
+        <p className="text-center text-ink/60">Waiting for the host to start…</p>
       )}
 
       <button
-        className="text-sm text-white/40 underline underline-offset-4"
+        className="text-sm text-ink/50 underline underline-offset-4"
         disabled={busy}
         onClick={() =>
           void run(
@@ -173,7 +182,7 @@ export default function Lobby({ state }: { state: RoomState }) {
       </button>
 
       {error && (
-        <p className="rounded-2xl bg-red-500/10 px-4 py-3 text-center text-sm text-red-300">
+        <p className="rounded-2xl bg-coral/10 px-4 py-3 text-center text-sm text-coral-deep">
           {error}
         </p>
       )}

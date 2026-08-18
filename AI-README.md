@@ -51,23 +51,90 @@ There is no other line of defense. Concretely:
 - Scores, winners, and the drinks ledger are computed in Postgres
   (`bq_settle_match`), not the client. A player cannot forge a win or wipe
   their own tab by calling REST endpoints directly.
-- **Function grants are as important as table grants and easy to get wrong.**
-  `0003_rls.sql` does `revoke execute on all functions in schema public from
-  public, anon, authenticated` and then re-grants only the RPCs meant to be
-  called from the app. If you add a new RPC, you must explicitly `grant
-  execute ... to authenticated` or the client gets a permission error calling
-  it. If you add an internal helper that only other `SECURITY DEFINER`
-  functions should call, do *not* grant it — see the RLS-helper bug below for
-  why that's not just theoretical.
+- **Function grants are as important as table grants, and the default runs the
+  wrong way.** `0003_rls.sql` does `revoke execute on all functions in schema
+  public from public, anon, authenticated` and then re-grants only the RPCs the
+  app calls. That line reads like a standing policy. **It is not — it is a
+  point-in-time snapshot of the functions that existed in `0003`.** Postgres
+  grants `EXECUTE` to `PUBLIC` by default on every newly created function, so
+  anything added in a later migration is **client-callable the moment it is
+  created** unless that migration revokes it explicitly.
+
+  So every new function needs a deliberate decision, in *both* directions:
+  - a real RPC → `revoke ... from public, anon` then
+    `grant execute ... to authenticated`;
+  - an internal helper only other `SECURITY DEFINER` functions call →
+    `revoke execute ... from public, anon, authenticated`. Writing a comment
+    saying it is internal does not make it internal.
+
+  This is not hypothetical in either direction. `0008` is the "forgot to grant"
+  half (below). `0026` is the "forgot to revoke" half: `0021` ends with a comment
+  stating `bq_dev_reset` and `bq_bot_answers` "stay internal", but never revoked
+  them, so both were callable by any signed-in client until it was caught by
+  auditing `has_function_privilege('authenticated', ...)` against the live
+  database rather than reading the migrations. Reading the migrations is what
+  hides it — the exposure is in what they *don't* say.
+
+  To audit the real state at any time:
+
+  ```sql
+  select p.proname, pg_get_function_identity_arguments(p.oid)
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+  order by 1;
+  ```
+
+  Everything it lists is client-callable surface area. It should contain the
+  RPCs in `src/lib/api.ts`, plus `bq_is_member` / `bq_is_member_of_match`
+  (required by the RLS policies — see below), and nothing else.
 
 If you're about to add a table or a column that a client will read directly
 (as opposed to through an RPC), ask: **could a hostile client abuse read
 access to this the moment betting opens or a duel starts?** If yes, it needs
 to go through an RPC instead, the way `match_themes` did.
 
-## Two real bugs this session found, and what they teach
+## The database at a glance
 
-Both were caught by `scripts/e2e.mjs`, **not** by testing directly in the SQL
+Eleven tables. The "client" column is what `anon`/`authenticated` can do
+**directly** over PostgREST; everything else is reached only through RPCs.
+"Realtime" means the table is in the `supabase_realtime` publication and
+therefore pushes changes to every subscribed phone.
+
+| table | client | realtime | what it holds |
+| --- | --- | --- | --- |
+| `rooms` | SELECT | yes | code, owner, status, `current_match_id`, house rules (`questions_per_match`, `seconds_per_question`, `max_bet`, `penalty_mouthfuls`, `reveal_seconds`), `mystery_themes`, `is_dev` |
+| `players` | SELECT | yes | room membership: nickname, `is_owner`, `is_bot`, `bot_skill`, nullable `user_id` |
+| `matches` | SELECT | yes | the duels: pairing, `match_index`, status, scores, winner, `reveal_until` |
+| `bets` | SELECT | yes | one row per bettor per match: who they backed, stake |
+| `drinks` | SELECT | yes | the payout ledger: player, mouthfuls, `reason` (`lost_bet` / `quiz_loss`) |
+| `questions` | **none** | no | the bank — 807 rows, `correct_index` lives here |
+| `match_questions` | **none** | no | the 10 drawn per duel: `position` 0–9, `asked_at`, `deadline` |
+| `answers` | **none** | no | submitted answers, graded server-side |
+| `match_themes` | **none** | no | `category_a` / `category_b` candidates and the rolled `category` |
+| `room_activity` | **none** | **no** | heartbeat timestamp per room, for the cleanup sweep |
+
+The five "none" tables are the whole anti-cheat story: reading any of them
+early would reveal an answer, a hidden theme, or an opponent's response.
+`room_activity` is unreadable for a different reason — see the cleanup section
+on why it is deliberately kept out of Realtime.
+
+**RPC surface** (everything `authenticated` may call — mirrors `src/lib/api.ts`):
+
+`create_room` · `join_room` · `leave_room` · `remove_player` · `start_game` ·
+`set_room_options` · `place_bet` · `lock_betting` · `get_match_theme` ·
+`get_current_question` · `submit_answer` · `advance_match` · `next_round` ·
+`get_match_results` · `get_leaderboard` · `touch_room` · `dev_start_round`
+
+Plus `bq_is_member` / `bq_is_member_of_match`, which are callable **on purpose**
+because the RLS policies invoke them (see bug 1 below).
+
+Internal, never client-callable: `bq_settle_match`, `bq_require_player`,
+`bq_dev_reset`, `bq_bot_answers`, `bq_cleanup`.
+
+## Bugs worth learning from
+
+The first two were caught by `scripts/e2e.mjs`, **not** by testing directly in the SQL
 editor / via the Supabase MCP `execute_sql` tool. That distinction matters
 enough to repeat: **SQL run through the MCP tools executes as `postgres`,
 which bypasses RLS and function-grant checks entirely.** A test that only
@@ -109,40 +176,79 @@ clients, same as the browser) before believing a schema change works.
 single iteration, and separately checks that a non-owner cannot bypass
 RLS-protected reads.
 
+3. **The over-permission blind spot** (`0026`, described under function grants
+   above). Worth calling out separately because of *how* it had to be found: a
+   passing test suite says nothing about it. Tests exercise the things the app
+   is supposed to do, so they catch permissions that are too **tight** — a
+   missing grant fails loudly on the next call. A permission that is too
+   **loose** breaks nothing and every test still passes; `bq_dev_reset` and
+   `bq_bot_answers` were callable by any client through every green run of both
+   suites. The only way to see it is to ask the live database who can call what
+   (the `has_function_privilege` query above) and compare that list against
+   `src/lib/api.ts`. Do that after adding any function, and treat a mismatch as
+   a bug even when nothing is visibly broken.
+
 ## Architecture map
 
 ```
 src/
-  lib/supabase.ts     Supabase client + ensureSignedIn() (anonymous auth)
-  lib/api.ts           Every RPC call, one function each — this is the entire
+  lib/supabase.ts       Supabase client + ensureSignedIn() (anonymous auth),
+                        plus the stale-session recovery helpers
+  lib/api.ts            Every RPC call, one function each — this is the entire
                         client→server surface. If it's not here, the client
-                        can't do it.
+                        can't do it. Its rpc() wrapper also catches the
+                        orphaned-JWT case and re-authenticates once.
   lib/types.ts          TS types mirroring RPC JSON shapes
-  hooks/useRoom.ts     Single Realtime subscription per room; refetches room
+  hooks/useRoom.ts      Single Realtime subscription per room; refetches room
                         state wholesale on any change rather than merging
                         deltas (simplicity over bytes, deliberate for a party
-                        game's scale)
+                        game's scale). Also owns two intervals: a 10s safety
+                        net and the 30s touch_room heartbeat — see the
+                        cleanup section, the heartbeat is load-bearing.
   routes/               Home (create/join), RoomView (state-machine dispatch)
-  components/           Lobby, Betting, Quiz, RoundResult, Leaderboard — one
-                        per room/match status. RoomView switches between them
-                        purely off `room.status` and `currentMatch.status`,
-                        keyed by match id so each duel gets fresh local state.
+  components/
+    Lobby, Betting, Quiz, RoundResult, Leaderboard
+                        One per room/match status. RoomView switches between
+                        them purely off `room.status` and
+                        `currentMatch.status`, keyed by match id so each duel
+                        gets fresh local state.
+    ThemeReveal         The slot-machine flip between the two candidate
+                        themes, then the held reveal listing every bet.
+                        Driven by `matches.reveal_until`, not a local timer.
+    Screen              Shared page shell. `home` prop renders the "← Home"
+                        link, which is client-side nav only — it deliberately
+                        does NOT call leave_room, so you keep your seat.
+    ErrorBoundary       Wraps the app so a render-time throw shows a message
+                        and a way out instead of a blank page. Added after a
+                        blank screen turned out to be undiagnosable from the
+                        browser (see below).
+    DevRoundPicker      The sandbox's play-or-bet choice, dev rooms only.
 
 supabase/migrations/    Applied in numeric order via the Supabase MCP
                         `apply_migration` tool (no local Postgres, no
                         `psql`, no service-role key in this environment —
                         migrations are the only way schema changes happen).
                         See the table in README.md for what each one does.
+                        Keep the repo and the database in step: write the
+                        file *and* apply it. `0024` was applied without ever
+                        being written down, which left the repo unable to
+                        rebuild the database from scratch until it was
+                        recovered out of `supabase_migrations.schema_migrations`.
 
 scripts/e2e.mjs         The test that matters most. Full game through the
                         real client SDK: anon auth, anti-cheat table-read
                         checks, betting rules, a complete themed duel,
                         mystery-themes reveal timing, leaderboard. Run before
                         trusting any schema change. `npm run test:e2e`.
-                        Leaves anonymous test users + a finished room behind
-                        on success. See the cleanup warning below before
-                        deleting any of it.
+scripts/dev-room-check.mjs
+                        The 111111 sandbox end to end, both round modes.
+                        `npm run test:dev-room`. Run this too — it is the only
+                        coverage of the bot paths.
 ```
+
+Both scripts print a `CLEANUP=` / `CLEANUP_IDS=` line of the exact user ids they
+created. Delete those by id (see the warning below); the scheduled sweep will
+also get them eventually.
 
 ### NEVER blanket-delete anonymous users
 
@@ -211,20 +317,192 @@ phone locks or drops the websocket, because every device polling
 `get_current_question` also calls `advance_match` on the same interval (see
 `Quiz.tsx`).
 
+## The colour system
+
+All colour lives in the `@theme` block at the top of `src/index.css`. There are
+no hardcoded hex values and no borrowed Tailwind palette colours (`red-500`,
+`slate-300`, …) anywhere in the app — if you need a colour, it is one of these
+tokens or it is a mistake.
+
+The palette went through several rounds with the user and is currently **light**:
+a near-white ground with saturated fills. The user's stated brief was "party but
+somewhat professional", and — stated explicitly — **no yellow and no purple**.
+Earlier versions were dark-on-plum with a yellow accent; don't drift back.
+
+| token | value | role |
+| --- | --- | --- |
+| `canvas` | `#eef2f7` | the page |
+| `surface` | `#ffffff` | cards, inputs |
+| `line` | `#d6dfea` | borders, tracks |
+| `ink` | `#10253a` | **all** text (13.9:1 on canvas) |
+| `accent` / `accent-deep` | `#00a6d6` / `#00668a` | cyan — room code, winners, timers |
+| `mint` / `mint-deep` | `#12b981` / `#05714b` | green — right answers, winning bets |
+| `coral` / `coral-deep` | `#fb4d5c` / `#c21f32` | red — drinks owed, lost bets, errors |
+| `blue` | `#1b3f8b` | navy anchor, filled surfaces |
+
+Four rules, all of which exist because a light ground behaves the opposite way
+to the dark one this app used to have. Getting any of them wrong produces
+something that looks fine on your screen and is unreadable in a pub.
+
+1. **Every hue has two weights, and they are not interchangeable.** A colour
+   bright enough to be exciting as a filled block is far too light to read as
+   text on white — plain `accent` on `canvas` is 2.5:1. So `bg-accent`, and
+   `text-accent-deep`. The bare token is for fills, the `-deep` twin is for text
+   and for anything thin (a 1.5px progress bar needs 3:1 against its track, which
+   the bright fills miss and the deep ones clear).
+2. **Text on a bright fill is `ink`, never white.** White on cyan/green/red is
+   2.5–3.3:1; ink is 4.7–6.2:1. `blue` is the sole exception and inverts it:
+   white on blue is 9.9:1, ink on blue is 1.6:1.
+3. **Muted text is `ink` at reduced alpha** (`text-ink/50`, `/60`, `/70`), not a
+   second grey token. Stay on multiples of 5 — Tailwind ships that opacity scale
+   and off-scale values risk being dropped at build time. `/50` is roughly the
+   floor for anything you actually expect to be read.
+4. **Never fade a neutral to suggest a surface.** On the old dark ground
+   `bg-surface/60` made a panel that was *lighter* than the page. On a light
+   ground the same class fades toward the page and the panel vanishes
+   (`canvas` on `surface` is 1.12:1). Panels are solid: `bg-surface` on the
+   canvas, `bg-canvas` for a recess inside a card. Tinted *party* fills at low
+   alpha (`bg-coral/10`, `bg-accent/20`) are fine and still take `ink` text —
+   those read as a wash of colour, which is the point.
+
+The one place white is still correct is the mystery-themes toggle knob, and it
+needs its shadow to be visible at all — a white knob on a border-weight grey is
+1.35:1.
+
+If you change any of this, check the numbers rather than eyeballing them; the
+values above were picked by computing WCAG ratios for every fill/text pairing,
+not by taste.
+
+Three things outside `index.css` carry colour too, and all of them were missed
+once already:
+
+- **PWA chrome** — `theme_color` and `background_color` in `vite.config.ts`, and
+  `theme-color` in `index.html`, all carry the canvas colour. `index.html` also
+  sets `apple-mobile-web-app-status-bar-style` to `default` rather than
+  `black-translucent`, because translucent draws the iOS clock in white: right
+  over the old dark ground, invisible over this one.
+- **The app icons** — `public/icon-192.png`, `icon-512.png`,
+  `apple-touch-icon.png`. Regenerate with `node scripts/make-icons.mjs`, which
+  draws the mark from constants copied out of the `@theme` block. It writes PNGs
+  by hand through `zlib` because there is no ImageMagick, rsvg, Pillow or canvas
+  library in this environment — do not reach for one, and do not hand-edit the
+  PNGs. Icons are easy to forget and the stalest possible artefact: the icon
+  stayed dark-plum-and-yellow through an entire palette change, which is the
+  literal reason that script exists.
+- **Nothing else.** There are no hex values anywhere in `src/` outside
+  `index.css`, and no borrowed Tailwind palette colours anywhere at all. Both are
+  worth re-checking with a grep after any colour work, since either one silently
+  breaks the ability to restyle the app from one place.
+
 ## Themes (added after the initial build)
 
 Every duel draws its 10 questions from one of 8 categories: Sport, Geography,
 Music, Celebrities, Film & TV, History, Science & Nature, Random Facts
-(~100 questions each, 807 total). The category lives in `match_themes`, a
-separate table with **no client grants at all** — not even read access — for
-the reason spelled out above: `matches` is client-readable over Realtime, so
-a category column there would leak a "mystery" theme instantly.
+(~100 questions each, 807 total). Themes live in `match_themes`, a separate
+table with **no client grants at all** — not even read access — for the reason
+spelled out above: `matches` is client-readable over Realtime, so a category
+column there would leak a hidden theme instantly.
 
-`get_match_theme(match_id)` is the only way a client learns a duel's theme.
-The reveal rule: always shown once a duel is `active`; before that (`pending`
-or `betting`), shown only if the room's `mystery_themes` flag is `false`
-(the default). The host toggles it from the lobby via `set_room_options`,
-which is lobby-only and owner-only.
+**Two candidates, rolled after betting closes** (`0020_theme_showdown.sql`).
+`start_game` assigns each duel two candidates (`category_a`, `category_b`) and
+draws *no* questions. `lock_betting` rolls the winner into `category`, draws
+that theme's questions, and sets `matches.reveal_until = now() + reveal_seconds`.
+
+The roll deliberately happens at lock time rather than at `start_game`. Both are
+equally leak-proof (nothing client-readable either way), but rolling after the
+bets are in means there is no predetermined outcome in existence to leak. The
+practical consequence: **a duel has no rows in `match_questions` until its
+`lock_betting` runs.** Anything asserting questions exist right after
+`start_game` is wrong under the current design.
+
+Two guards protect the reveal window, both load-bearing:
+- `get_current_question` returns `revealing: true` and **withholds prompt and
+  options** until `reveal_until` passes. A duellist who could read the question
+  during the animation would get free thinking time.
+- `submit_answer` rejects anything sent before `match_questions.asked_at`.
+- The first question's `asked_at`/`deadline` are stamped *from* `reveal_until`,
+  so the reveal never eats into answering time. Lengthening `reveal_seconds`
+  costs nobody a second of their 20.
+
+`get_match_theme(match_id)` is the only way a client learns any of this. It
+returns `candidates` during betting and `category` once rolled; under the room's
+`mystery_themes` flag it hides the candidates too, so bets are placed blind. The
+host toggles that from the lobby via `set_room_options` (lobby-only, owner-only).
+
+Because a duel now pauses on a reveal, `scripts/e2e.mjs` has a `waitForReveal()`
+helper. Any new test that calls `lock_betting` and then expects a question must
+use it, or it will get the sealed reveal payload and fail confusingly (the
+symptom is `submit_answer` being called with an undefined `match_question_id`).
+
+## The 111111 sandbox
+
+Joining with the code `111111` gives a single-player room containing you and
+two bots (`0021_dev_room.sql`), for exercising the whole chain without needing
+a room full of people. `npm run test:dev-room` covers it end to end.
+
+Three players is the point: `floor(3/2)` = one duel plus one spectator, so
+`dev_start_round(room, 'play')` pairs you with a bot and leaves the other
+betting, and `'bet'` pairs the two bots and leaves you betting. Both sides of
+the game are reachable solo by flipping one choice, and you pick again after
+every round rather than being locked into a bracket.
+
+Things that are easy to get wrong here:
+
+- **Bots have `user_id = null` and `is_bot = true`.** They have no auth
+  identity and never call an RPC -- the server plays them from inside
+  `advance_match` (via `bq_bot_answers`) and `dev_start_round`. This keeps them
+  out of RLS entirely, since `bq_is_member` matches `user_id = auth.uid()`,
+  which null can never satisfy. A `players_user_or_bot` check constraint
+  enforces the pairing of those two columns.
+- **Bot decisions are deterministic per (question, bot)**, seeded from
+  `hashtext(match_question_id || player_id)`. They must be: `advance_match` is
+  polled every ~700ms by every client, so a bot rolling fresh randomness each
+  call would flip its answer and its think-time on every poll.
+- **Bots deliberately wait 2-5 seconds** before answering, so a bot-vs-bot duel
+  is watchable instead of resolving the instant the question opens.
+- `join_room` special-cases the code and **resets the room on every join** --
+  fresh lobby, previous rounds wiped. Two people using it at once would clobber
+  each other; it is a dev tool, not a room.
+- The room is **self-healing**: if it gets deleted (e.g. its owner's auth user
+  is removed, which cascades), the next join recreates it. Verified.
+- `dev_start_round` refuses to run against a room without `is_dev`, so the
+  sandbox cannot be used as a lever on a real game.
+
+## Scheduled cleanup (pg_cron)
+
+A `pg_cron` job named `betquiz-cleanup` runs `public.bq_cleanup()` every 5
+minutes (`0023`–`0025`). It deletes rooms idle for 10 minutes and anonymous
+users attached to no room and older than 30 minutes. Inspect it with
+`select * from cron.job` / `cron.job_run_details`; both intervals are function
+parameters if they need tuning.
+
+The user asked for 10 minutes on both rooms and users. Rooms are exactly that.
+For users the gate is deliberately *attachment* rather than age — anyone in a
+room is untouchable no matter how old their account is — and the 30 minutes only
+avoids catching someone who signed in seconds ago and has not typed a room code
+yet. Worth re-confirming if it ever comes up rather than silently keeping it.
+
+**The client heartbeat is load-bearing.** `useRoom` calls `touch_room` every 30
+seconds, which stamps `room_activity`. Without it a room being actively played
+looks idle — `players.last_seen` is only written on join, and nothing else
+writes a timestamp during a duel — so the sweep would delete rooms out from
+under people mid-game. If you ever change or remove that heartbeat, change the
+cleanup with it.
+
+`room_activity` is deliberately **not** in the `supabase_realtime` publication,
+and the heartbeat deliberately does not live on `rooms`. `rooms` is published,
+and `useRoom` refetches the entire room on any change, so a heartbeat there
+would broadcast to every device every 30s purely to record "still here".
+
+**`auth.users` cascades to `rooms` via `rooms_owner_id_fkey`.** Deleting a user
+silently deletes their rooms. The user sweep therefore skips anyone who has a
+`players` row *or* owns a room. Testing caught this: the ownership check was
+initially missing, and a room whose owner held no players row was destroyed by
+the cascade. The two checks are equivalent today (create_room and bq_dev_reset
+both seat the owner) but nothing enforces that, so both are checked.
+
+Related: never clean up test users with a blanket delete — see the warning
+above about `is_anonymous = true`.
 
 ## Git workflow — do not commit or push without being asked
 
@@ -301,7 +579,7 @@ What this means in practice:
   standard practice — the Pages-outage incident above is exactly the kind of
   surprising side effect that justifies asking first.
 
-## User preferences observed this session
+## User preferences
 
 - Wants real verification, not claimed verification — the back-and-forth
   that found both bugs above happened because a full client-driven test was
@@ -320,3 +598,13 @@ What this means in practice:
   default, host-toggleable to hidden-until-lock — don't assume either
   extreme is what's wanted next time this kind of choice comes up).
 - Branch is `master`, not `main` — asked for explicitly, don't "fix" it back.
+- **Colour has been iterated on repeatedly and the user has clear taste.** The
+  progression was: default dark → a muted blue/grey set they found flat → a
+  brighter "party" set on a dark plum ground → lightening that ground → and
+  finally the light scheme documented above, with "no yellow, no purple" said
+  explicitly. Treat that as a standing constraint, not a one-off instruction.
+  They respond well to being given a palette and a short explanation of why
+  each colour got the role it did.
+- Asks for the "why", not just the change — the sections in this file exist
+  because the user asked for reasoning to be written down for future sessions.
+  When something non-obvious gets decided, it belongs here.

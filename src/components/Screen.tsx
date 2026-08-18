@@ -27,7 +27,7 @@ export default function Screen({
         {home && (
           <button
             onClick={() => navigate('/')}
-            className="mb-1 self-start text-sm text-white/40 underline underline-offset-4 active:text-white/70"
+            className="mb-1 self-start text-sm text-ink/50 underline underline-offset-4 active:text-ink/75"
           >
             ← Home
           </button>

@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:e2e": "node scripts/e2e.mjs"
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:dev-room": "node scripts/dev-room-check.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",
